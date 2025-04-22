@@ -1,0 +1,27 @@
+{
+  "name": "@flarenetwork/flare-periphery-contracts",
+  "description": "Smart contracts for all Flare chains",
+  "version": "0.1.22",
+  "author": "Flare Network",
+  "license": "MIT",
+  "keywords": [
+    "flare",
+    "flarenetwork",
+    "songbird",
+    "smart contracts",
+    "defi",
+    "state connector",
+    "ftso"
+  ],
+  "files": [
+    "coston",
+    "coston2",
+    "songbird",
+    "flare",
+    "examples"
+  ],
+  "dependencies": {
+    "@openzeppelin/contracts": "^4.6.0",
+    "hardhat": "^2.22.5"
+  }
+}
