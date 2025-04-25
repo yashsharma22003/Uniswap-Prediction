@@ -1,440 +1,476 @@
-// // SPDX-License-Identifier: MIT
-// pragma solidity ^0.8.0;
-
-// import "forge-std/Test.sol";
-// import "../src/CryptoMarketPool.sol";
-// // Use the actual interface definition if available, otherwise define locally or import mock
-// import {IMarketPoolCrypto} from "../src/CryptoMarketPool.sol"; // Use the interface from the contract itself
-// import {IFtsoV2PriceFeed} from "../src/CryptoMarketPool.sol"; // Use the interface from the contract itself
-// // You might need a mock implementation for FtsoV2PriceFeed if the imported one is just an interface
-// import "../src/FtsoV2PriceFeed.sol"; // Assuming this contains a mock implementation as used in the original test
-// import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-// import {console} from "forge-std/console.sol";
-
-
-// contract CryptoMarketPoolEdgeTest is Test {
-//     CryptoMarketPool public pool;
-//     FtsoV2PriceFeed public priceFeed;
-//     address public oracleAdapter;
-//     address public user1;
-//     address public user2;
-//     address public user3; // Additional user for some tests
-//     address public nonParticipant;
-//     address public rewardToken; // Keep for compatibility, though using native tokens
-
-//     // --- Initialization Parameters ---
-//     uint256 public predictAmount = 1000 * 10 ** 18;
-//     uint256 public minStake = 0.5 ether;
-//     uint256 public initialBalance = 10 ether;
-//     uint256 public participationDuration = 12 hours;
-//     uint256 public resolutionDelay = 1 days;
-//     string public constant TARGET_CRYPTO = "BTC";
-//     int8 public constant ORACLE_DECIMALS = 18;
-
-//     // --- Mock Oracle Return Values ---
-//     uint256 priceAbove = 1200 * 10 ** 18;
-//     uint256 priceBelow = 800 * 10 ** 18;
-//     uint256 priceEqual = 1000 * 10 ** 18;
-
-
-//     // Set up the initial conditions
-//     function setUp() public {
-//         // Deploy the FtsoV2PriceFeed mock
-//         string[] memory cryptoSymbols = new string[](1);
-//         cryptoSymbols[0] = TARGET_CRYPTO;
-//         bytes21[] memory feedIds = new bytes21[](1);
-//         feedIds[0] = bytes21(0x014254432f55534400000000000000000000000000); // BTC/USD
-
-//         priceFeed = new FtsoV2PriceFeed(cryptoSymbols, feedIds);
-//         oracleAdapter = address(priceFeed);
-
-//         // Deploy the CryptoMarketPool contract
-//         pool = new CryptoMarketPool();
-
-//         // Define timestamps based on current block time
-//         uint256 currentTimestamp = block.timestamp;
-//         uint256 participationDeadline = currentTimestamp + participationDuration;
-//         uint256 resolveTimestamp = participationDeadline + resolutionDelay; // Resolve after participation ends
-
-
-//         // Initialize the contract
-//         pool.initialize(
-//             predictAmount,
-//             TARGET_CRYPTO,
-//             oracleAdapter,
-//             resolveTimestamp,
-//             participationDeadline,
-//             minStake,
-//             address(0) // Native token rewards
-//         );
-
-//         // Set up user addresses
-//         user1 = makeAddr("user1");
-//         user2 = makeAddr("user2");
-//         user3 = makeAddr("user3");
-//         nonParticipant = makeAddr("nonParticipant");
-
-//         // Fund user accounts
-//         deal(user1, initialBalance);
-//         deal(user2, initialBalance);
-//         deal(user3, initialBalance);
-//         deal(nonParticipant, initialBalance); // Fund even if not participating initially
-//     }
-
-//     // --- Initialization Edge Cases ---
-
-//     function test_RevertIf_InitializeTwice() public {
-//         // Deploy a BRAND NEW pool instance specifically for this test
-//         CryptoMarketPool localPool = new CryptoMarketPool();
-
-//         // Define initialization parameters (can reuse from class variables or define locally)
-//         uint256 currentTimestamp = block.timestamp;
-//         // Use short, distinct timestamps to avoid clashes with setUp instance if it matters
-//         uint256 participationDeadline = currentTimestamp + 1 hours;
-//         uint256 resolveTimestamp = participationDeadline + 2 hours;
-
-//         // FIRST INITIALIZATION (should succeed)
-//         localPool.initialize(
-//             predictAmount,
-//             TARGET_CRYPTO,
-//             oracleAdapter, // Use the same mock oracle adapter address from setUp
-//             resolveTimestamp,
-//             participationDeadline,
-//             minStake,
-//             address(0)
-//         );
-
-//         // Confirm the local instance is initialized
-//         assertTrue(localPool.initialized(), "Local pool instance should be initialized");
-
-//         // --- ACT & ASSERT ---
-//         // Define the exact expected revert message bytes
-//         bytes memory expectedRevert = bytes("Contract already initialized");
-
-//         // Use vm.expectRevert with the exact bytes
-//         vm.expectRevert(expectedRevert);
-
-//         // SECOND INITIALIZATION attempt on the SAME local instance (should revert)
-//         localPool.initialize(
-//             predictAmount,
-//             TARGET_CRYPTO,
-//             oracleAdapter,
-//             resolveTimestamp + 1 days, // Use slightly different params just to ensure it's a distinct call
-//             participationDeadline + 1 days,
-//             minStake,
-//             address(0)
-//         );
-//     }
-
-//     function test_RevertIf_InitializeInvalidDeadline() public {
-//         CryptoMarketPool newPool = new CryptoMarketPool();
-//         uint256 currentTimestamp = block.timestamp;
-//         uint256 resolveTs = currentTimestamp + 1 days;
-//         uint256 deadlineTs = resolveTs + 1 hours; // Deadline AFTER resolution
-
-//         vm.expectRevert("Deadline must be before resolution");
-//         newPool.initialize(
-//             predictAmount, TARGET_CRYPTO, oracleAdapter,
-//             resolveTs, deadlineTs, // Invalid timestamps
-//             minStake, address(0)
-//         );
-//     }
-
-//     function test_RevertIf_InitializeZeroOracle() public {
-//         CryptoMarketPool newPool = new CryptoMarketPool();
-//         uint256 currentTimestamp = block.timestamp;
-//         uint256 participationDeadline = currentTimestamp + participationDuration;
-//         uint256 resolveTimestamp = participationDeadline + resolutionDelay;
-
-//         vm.expectRevert("Invalid oracle address");
-//         newPool.initialize(
-//             predictAmount, TARGET_CRYPTO, address(0), // Zero oracle address
-//             resolveTimestamp, participationDeadline,
-//             minStake, address(0)
-//         );
-//     }
-
-
-//     // --- Prediction Edge Cases ---
-
-//     function test_RevertIf_PredictAfterDeadline() public {
-//         vm.warp(pool.participationDeadline() + 1 seconds); // Move time just past the deadline
-//         vm.prank(user1);
-//         vm.expectRevert("Participation deadline has passed");
-//         pool.predict{value: minStake}(true, minStake);
-//     }
-
-//     function test_RevertIf_PredictBelowMinStake() public {
-//         uint256 amountBelowMin = minStake - 1 wei; // Wei is the smallest unit
-//         // Ensure user has enough balance, but send less than minStake
-//         deal(user1, minStake);
-//         vm.prank(user1);
-//         vm.expectRevert("Staked amount is below minimum");
-//         pool.predict{value: amountBelowMin}(true, amountBelowMin);
-//     }
-
-//     function test_RevertIf_PredictValueMismatch() public {
-//         uint256 stakeAmount = 1 ether;
-//         uint256 sentValue = 0.9 ether; // Different from stakeAmount
-//         vm.prank(user1);
-//         vm.expectRevert("Ether sent and amount passed mismatch");
-//         pool.predict{value: sentValue}(true, stakeAmount); // Mismatch here
-//     }
-
-//     function test_RevertIf_PredictAfterResolve() public {
-//         vm.prank(user1);
-//         pool.predict{value: 1 ether}(true, 1 ether);
-
-//         vm.warp(pool.resolveTimestamp() + 1); // Time is past deadline AND resolution time
-//         mockOraclePrice(priceAbove, ORACLE_DECIMALS, uint64(block.timestamp));
-//         pool.resolve();
-//         assertTrue(pool.resolved());
-
-//         vm.prank(user2);
-//         // Expecting revert because deadline has passed (this check comes first in the function)
-//         vm.expectRevert(bytes("Participation deadline has passed")); // CORRECTED EXPECTED REVERT
-//         pool.predict{value: 1 ether}(false, 1 ether);
-//     }
-
-//     // --- Tests that should PASS (no revert expected) ---
-
-//     function test_RebetChangeStake() public {
-//         vm.prank(user1);
-//         pool.predict{value: minStake}(true, minStake);
-//         assertEq(pool.amountStaked(user1), minStake);
-//         assertEq(pool.totalStake(), minStake);
-//         assertEq(pool.stakeForGreaterThan(), minStake);
-//         assertEq(pool.forGreaterThan(), 1);
-//         assertEq(pool.againstGreaterThan(), 0);
-
-//         uint256 increasedStake = minStake + 1 ether;
-//         vm.prank(user1);
-//         pool.predict{value: increasedStake}(true, increasedStake);
-
-//         assertEq(pool.amountStaked(user1), increasedStake, "User stake should be updated");
-//         assertEq(pool.totalStake(), increasedStake, "Total stake should reflect the change");
-//         assertEq(pool.stakeForGreaterThan(), increasedStake, "Stake for 'true' should be updated");
-//         assertEq(pool.forGreaterThan(), 1, "Bet count for 'true' should remain 1 (same user)");
-//         assertEq(pool.againstGreaterThan(), 0);
-//     }
-
-//     function test_RebetChangePrediction() public {
-//         uint256 initialStake = 1 ether;
-//         vm.prank(user1);
-//         pool.predict{value: initialStake}(true, initialStake);
-//         assertEq(pool.amountStaked(user1), initialStake);
-//         assertEq(pool.betOn(user1), true);
-//         assertEq(pool.totalStake(), initialStake);
-//         assertEq(pool.stakeForGreaterThan(), initialStake);
-//         assertEq(pool.forGreaterThan(), 1);
-//         assertEq(pool.againstGreaterThan(), 0);
-
-//         vm.prank(user1);
-//         pool.predict{value: initialStake}(false, initialStake);
-
-//         assertEq(pool.amountStaked(user1), initialStake, "User stake amount should remain");
-//         assertEq(pool.betOn(user1), false, "User prediction should change to false");
-//         assertEq(pool.totalStake(), initialStake, "Total stake should remain the same");
-//         assertEq(pool.stakeForGreaterThan(), 0, "Stake for 'true' should be zero now");
-//         assertEq(pool.forGreaterThan(), 0, "Count for 'true' should be zero");
-//         assertEq(pool.againstGreaterThan(), 1, "Count for 'false' should be 1");
-//     }
-
-//     // --- Resolution Edge Cases ---
-
-//     function test_RevertIf_ResolveBeforeTime() public {
-//         vm.expectRevert("Resolve timestamp not reached");
-//         pool.resolve();
-//     }
-
-//     function test_RevertIf_ResolveTwice() public {
-//         vm.prank(user1);
-//         pool.predict{value: 1 ether}(true, 1 ether);
-
-//         vm.warp(pool.resolveTimestamp() + 1);
-//         mockOraclePrice(priceAbove, ORACLE_DECIMALS, uint64(block.timestamp));
-
-//         pool.resolve();
-//         assertTrue(pool.resolved());
-
-//         vm.expectRevert("Pool already resolved");
-//         pool.resolve();
-//     }
-
-//     function test_RevertIf_ResolveStalePrice() public {
-//         vm.prank(user1);
-//         pool.predict{value: 1 ether}(true, 1 ether);
-
-//         vm.warp(pool.resolveTimestamp() + 1);
-
-//         uint64 staleTimestamp = uint64(block.timestamp - pool.STALE_PRICE_THRESHOLD() - 1);
-//         mockOraclePrice(priceAbove, ORACLE_DECIMALS, staleTimestamp);
-
-//         vm.expectRevert("Price data is stale");
-//         pool.resolve();
-//     }
-
-//     function test_ResolvePriceEqualsPredictAmount() public {
-//         vm.prank(user1);
-//         pool.predict{value: 1 ether}(true, 1 ether);
-//         vm.prank(user2);
-//         pool.predict{value: 1 ether}(false, 1 ether);
-
-//         vm.warp(pool.resolveTimestamp() + 1);
-//         mockOraclePrice(priceEqual, ORACLE_DECIMALS, uint64(block.timestamp));
-
-//         pool.resolve();
-
-//         assertFalse(pool.greaterThan(), "Outcome should be false when price equals prediction");
-//         assertTrue(pool.resolved());
-//     }
-
-//     // --- Claiming Edge Cases ---
-
-//     function test_RevertIf_ClaimBeforeResolve() public {
-//         vm.prank(user1);
-//         pool.predict{value: 1 ether}(true, 1 ether);
-
-//         vm.prank(user1);
-//         vm.expectRevert("Campaign not yet resolved");
-//         pool.claimRewards();
-//     }
-
-//     function test_RevertIf_ClaimWithoutBet() public {
-//         vm.prank(user1);
-//         pool.predict{value: 1 ether}(true, 1 ether);
-//         vm.prank(user2);
-//         pool.predict{value: 1 ether}(false, 1 ether);
-
-//         vm.warp(pool.resolveTimestamp() + 1);
-//         mockOraclePrice(priceAbove, ORACLE_DECIMALS, uint64(block.timestamp));
-//         pool.resolve();
-
-//         vm.prank(nonParticipant);
-//         vm.expectRevert("No bet found for user");
-//         pool.claimRewards();
-//     }
-
-//     function test_RevertIf_ClaimTwice() public {
-//         vm.prank(user1);
-//         pool.predict{value: 1 ether}(true, 1 ether);
-//         vm.prank(user2);
-//         pool.predict{value: 1 ether}(false, 1 ether);
-
-//         vm.warp(pool.resolveTimestamp() + 1);
-//         mockOraclePrice(priceAbove, ORACLE_DECIMALS, uint64(block.timestamp));
-//         pool.resolve();
-
-//         uint256 balanceBefore = user1.balance;
-//         vm.prank(user1);
-//         pool.claimRewards();
-//         assertTrue(user1.balance > balanceBefore);
-//         assertTrue(pool.rewardClaimed(user1));
-
-//         vm.prank(user1);
-//         vm.expectRevert("Reward already claimed");
-//         pool.claimRewards();
-//     }
-
-//     function test_RevertIf_ClaimLoser() public {
-//         vm.prank(user1);
-//         pool.predict{value: 1 ether}(true, 1 ether); // User1 bets true
-//         vm.prank(user2);
-//         pool.predict{value: 1 ether}(false, 1 ether); // User2 bets false
-
-//         vm.warp(pool.resolveTimestamp() + 1);
-//         mockOraclePrice(priceBelow, ORACLE_DECIMALS, uint64(block.timestamp)); // False wins
-//         pool.resolve();
-//         assertFalse(pool.greaterThan());
-
-//         uint256 balanceBefore = user1.balance;
-//         vm.prank(user1); // User1 (loser) tries to claim
-//         vm.expectRevert(bytes("You lost the bet, no rewards")); // Expect exact revert string
-//         pool.claimRewards();
-
-//         // Check balance didn't increase
-//         assertEq(user1.balance, balanceBefore);
-//         // Check they are NOT marked claimed because the state change was rolled back by revert
-//         assertFalse(pool.rewardClaimed(user1), "Loser should NOT be marked claimed after revert");
-//     }
-
-//     function test_ClaimOnlyWinners() public {
-//         vm.prank(user1);
-//         pool.predict{value: 1 ether}(true, 1 ether);
-//         vm.prank(user2);
-//         pool.predict{value: 2 ether}(true, 2 ether);
-
-//         assertEq(pool.totalStake(), 3 ether);
-//         assertEq(pool.stakeForGreaterThan(), 3 ether);
-
-//         vm.warp(pool.resolveTimestamp() + 1);
-//         mockOraclePrice(priceAbove, ORACLE_DECIMALS, uint64(block.timestamp));
-//         pool.resolve();
-//         assertTrue(pool.greaterThan());
-
-//         uint256 totalLosingStake = pool.totalStake() - pool.stakeForGreaterThan();
-//         assertEq(totalLosingStake, 0);
-//         assertEq(pool.globalFee(), 0);
-
-//         uint256 balance1Before = user1.balance;
-//         vm.prank(user1);
-//         pool.claimRewards();
-//         assertEq(user1.balance, balance1Before + 1 ether, "User1 should get only stake back");
-//         assertTrue(pool.rewardClaimed(user1));
-
-//         uint256 balance2Before = user2.balance;
-//         vm.prank(user2);
-//         pool.claimRewards();
-//         assertEq(user2.balance, balance2Before + 2 ether, "User2 should get only stake back");
-//         assertTrue(pool.rewardClaimed(user2));
-//     }
-
-
-//     // --- Fee Calculation Edge Cases ---
-//     function test_FeeCalculation() public {
-//         uint256 stake1 = 2 ether;
-//         uint256 stake2 = 3 ether;
-//         vm.prank(user1);
-//         pool.predict{value: stake1}(true, stake1);
-//         vm.prank(user2);
-//         pool.predict{value: stake2}(false, stake2);
-
-//         assertEq(pool.totalStake(), stake1 + stake2);
-//         assertEq(pool.stakeForGreaterThan(), stake1);
-
-//         vm.warp(pool.resolveTimestamp() + 1);
-//         mockOraclePrice(priceAbove, ORACLE_DECIMALS, uint64(block.timestamp));
-//         pool.resolve();
-//         assertTrue(pool.greaterThan());
-
-//         uint256 expectedFee = (stake2 * pool.FEE_PERCENTAGE()) / 100;
-//         assertEq(pool.globalFee(), expectedFee, "Fee calculation mismatch");
-
-//         uint256 balance1Before = user1.balance;
-//         vm.prank(user1);
-//         pool.claimRewards();
-
-//         uint256 totalWinningStake = stake1;
-//         uint256 totalLosingStake = stake2;
-//         uint256 netLosingPool = totalLosingStake > expectedFee ? totalLosingStake - expectedFee : 0; // Added check for safety
-//         uint256 expectedReward = stake1 + (stake1 * netLosingPool) / totalWinningStake;
-
-//         assertEq(user1.balance, balance1Before + expectedReward, "Winner reward calculation mismatch");
-//         assertTrue(pool.rewardClaimed(user1));
-//     }
-
-
-//     // --- Helper Functions ---
-
-//     /// @notice Mocks the FtsoV2PriceFeed return value for the target crypto.
-//     function mockOraclePrice(uint256 _price, int8 _decimals, uint64 _timestamp) internal {
-//         vm.mockCall(
-//             oracleAdapter, // Address of the mock FtsoV2PriceFeed contract
-//             abi.encodeWithSelector(
-//                 IFtsoV2PriceFeed.getPriceFeed.selector,
-//                 TARGET_CRYPTO // The crypto symbol being targeted
-//             ),
-//             abi.encode(_price, _decimals, _timestamp) // Encoded return values
-//         );
-//     }
-// }
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+import "forge-std/Test.sol";
+import "forge-std/Vm.sol"; // Import Vm for cheatcodes
+
+// Import the contract under test
+import { CryptoMarketPoolToken } from "../src/CryptoMarketPoolToken.sol";
+
+// Import interfaces used by the contract
+import { IBetToken } from "../src/interface/IBetToken.sol"; // Assuming this path
+import { IMockFtsoV2PriceFeed } from "../src/interface/IMockFtsoV2PriceFeed.sol"; // Assuming this path
+import {MockFtsoV2PriceFeed} from "../src/Mock/MockFtsoV2PriceFeed.sol";
+
+// --- Mock Contracts for Dependencies ---
+
+// Mock for IBetToken
+// Simulates minting, total supply, and max supply
+contract MockBetToken is IBetToken {
+    mapping(address => uint256) public balances;
+    uint256 public totalSupply = 0;
+    uint256 public MAX_SUPPLY = type(uint256).max; // Default to a large value, can be set
+
+    // Allow setting max supply for specific tests
+    function setMaxSupply(uint256 _maxSupply) public {
+        MAX_SUPPLY = _maxSupply;
+    }
+
+    // Mock implementation of mint
+    function mint(address to, uint256 amount) external override {
+        require(totalSupply + amount <= MAX_SUPPLY, "Mock: Max supply reached");
+        balances[to] += amount;
+        totalSupply += amount;
+        // In a real token, you might emit a Transfer event from address(0)
+    }
+
+    // Mock implementation of burn (if needed by the contract, not currently)
+    function burn(address from, uint256 amount) external override {
+         require(balances[from] >= amount, "Mock: Insufficient balance");
+         balances[from] -= amount;
+         totalSupply -= amount;
+         // In a real token, you might emit a Transfer event to address(0)
+    }
+
+    // Mock implementation of transfer (if needed by the contract, not currently)
+    function transfer(address to, uint256 amount) external returns (bool) {
+         require(balances[msg.sender] >= amount, "Mock: Insufficient balance");
+         balances[msg.sender] -= amount;
+         balances[to] += amount;
+         return true;
+    }
+
+    // Mock implementation of transferFrom (if needed by the contract, not currently)
+    function transferFrom(address from, address to, uint256 amount) external returns (bool) {
+        // Requires allowance logic if needed
+         require(balances[from] >= amount, "Mock: Insufficient balance");
+         balances[from] -= amount;
+         balances[to] += amount;
+         return true;
+    }
+
+    // Mock implementation of approve (if needed by the contract, not currently)
+    function approve(address spender, uint256 amount) external returns (bool) {
+         // Allowance logic needed
+         return true;
+    }
+
+    // Mock implementation of allowance (if needed by the contract, not currently)
+    function allowance(address owner, address spender) external view  returns (uint256) {
+         // Allowance logic needed
+         return 0; // Default
+    }
+
+    // Mock implementation of balanceOf (if needed by the contract, not currently)
+    function balanceOf(address account) external view override returns (uint256) {
+        return balances[account];
+    }
+
+     // Mock implementation of decimals (if needed by the contract, not currently)
+    function decimals() external view override returns (uint8) {
+        return 18; // Default
+    }
+
+     // Mock implementation of symbol (if needed by the contract, not currently)
+    function symbol() external view override returns (string memory) {
+        return "MBT"; // Mock Bet Token
+    }
+
+     // Mock implementation of name (if needed by the contract, not currently)
+    function name() external view override returns (string memory) {
+        return "Mock Bet Token";
+    }
+}
+
+contract CryptoMarketPoolTokenTest is Test {
+    CryptoMarketPoolToken public marketPool;
+    MockBetToken public mockHighBetToken;
+    MockBetToken public mockLowBetToken;
+    MockFtsoV2PriceFeed public mockFtsoV2;
+
+    string public _symbol;
+
+    // Test parameters for initialization
+    uint256 public constant PREDICT_AMOUNT = 50000e18; // Example: $50,000 with 18 decimals
+    string public constant CRYPTO_TARGETED = "BTC/USD";
+    uint256 public constant RESOLVE_TIMESTAMP = 200; // Example timestamp
+    uint256 public constant PARTICIPATION_DEADLINE = 100; // Example timestamp
+    uint256 public constant MIN_STAKE = 1e18; // Example: 1 native token
+    address public constant REWARD_TOKEN = address(0); // Using native token for reward
+
+
+    event Predicted(
+        address indexed user,
+        bool indexed prediction,
+        uint256 amount
+    );
+    event Resolved(bool indexed greaterThan, uint256 indexed timestamp);
+    event RewardClaimed(address indexed user, uint256 amount);
+    // NEW Events for specific token awards
+    event HighBetTokenAwarded(address indexed user, uint256 amount);
+    event LowBetTokenAwarded(address indexed user, uint256 amount);
+
+    // User addresses for testing
+    address public constant USER1 = address(101);
+    address public constant USER2 = address(102);
+    address public constant USER3 = address(103);
+    address public constant PROTOCOL_TREASURY = address(999); // Assuming a treasury address
+
+    function setUp() public {
+        // Deploy mock contracts
+        mockHighBetToken = new MockBetToken();
+        mockLowBetToken = new MockBetToken();
+        mockFtsoV2 = new MockFtsoV2PriceFeed(_symbol);
+
+        // Deploy the contract under test
+        marketPool = new CryptoMarketPoolToken();
+
+        // Set the protocol treasury address (assuming a setter or it's set during deployment)
+        // Since there's no setter in the provided code, we'll assume it's set somehow,
+        // or we can add a setter for testing purposes if needed.
+        // For now, we'll manually set it using cheatcodes if necessary for tests that use it.
+        // vm.store(address(marketPool), bytes32(uint256(0)), bytes32(uint256(uint160(PROTOCOL_TREASURY)))); // Example if protocolTreasury is the first state variable
+
+        // Initialize the market pool contract
+        vm.prank(address(this)); // Prank with the test contract address for initialization
+        marketPool.initialize(
+            PREDICT_AMOUNT,
+            CRYPTO_TARGETED,
+            address(mockFtsoV2), // Use mock FtsoV2 address
+            RESOLVE_TIMESTAMP,
+            PARTICIPATION_DEADLINE,
+            MIN_STAKE,
+            REWARD_TOKEN,
+            address(mockHighBetToken), // Use mock HighBetToken address
+            address(mockLowBetToken) // Use mock LowBetToken address
+        );
+    }
+
+    // --- Test Initialization ---
+
+    function test_Initialize_Success() public {
+        // Check if state variables are set correctly
+        assertEq(marketPool.predictAmount(), PREDICT_AMOUNT);
+        assertEq(marketPool.cryptoTargated(), CRYPTO_TARGETED);
+        assertEq(marketPool.oracleAdapter(), address(mockFtsoV2));
+        assertEq(marketPool.resolveTimestamp(), RESOLVE_TIMESTAMP);
+        assertEq(marketPool.participationDeadline(), PARTICIPATION_DEADLINE);
+        assertEq(marketPool.minStake(), MIN_STAKE);
+        assertEq(marketPool.rewardToken(), REWARD_TOKEN);
+        assertTrue(marketPool.initialized());
+        assertEq(address(marketPool.ftsoV2()), address(mockFtsoV2));
+        assertEq(address(marketPool.highBetToken()), address(mockHighBetToken));
+        assertEq(address(marketPool.lowBetToken()), address(mockLowBetToken));
+    }
+
+    function test_Initialize_AlreadyInitialized_Reverts() public {
+        vm.expectRevert("Contract already initialized");
+        marketPool.initialize(
+            PREDICT_AMOUNT,
+            CRYPTO_TARGETED,
+            address(mockFtsoV2),
+            RESOLVE_TIMESTAMP,
+            PARTICIPATION_DEADLINE,
+            MIN_STAKE,
+            REWARD_TOKEN,
+            address(mockHighBetToken),
+            address(mockLowBetToken)
+        );
+    }
+
+    function test_Initialize_InvalidOracleAddress_Reverts() public {
+        // Deploy a new instance to test initialization failure
+        CryptoMarketPoolToken newMarketPool = new CryptoMarketPoolToken();
+        vm.expectRevert("Invalid oracle address");
+        newMarketPool.initialize(
+            PREDICT_AMOUNT,
+            CRYPTO_TARGETED,
+            address(0), // Invalid address
+            RESOLVE_TIMESTAMP,
+            PARTICIPATION_DEADLINE,
+            MIN_STAKE,
+            REWARD_TOKEN,
+            address(mockHighBetToken),
+            address(mockLowBetToken)
+        );
+    }
+
+    function test_Initialize_DeadlineAfterResolution_Reverts() public {
+         // Deploy a new instance to test initialization failure
+        CryptoMarketPoolToken newMarketPool = new CryptoMarketPoolToken();
+        vm.expectRevert("Deadline must be before resolution");
+        newMarketPool.initialize(
+            PREDICT_AMOUNT,
+            CRYPTO_TARGETED,
+            address(mockFtsoV2),
+            PARTICIPATION_DEADLINE, // Resolution before deadline
+            RESOLVE_TIMESTAMP,
+            MIN_STAKE,
+            REWARD_TOKEN,
+            address(mockHighBetToken),
+            address(mockLowBetToken)
+        );
+    }
+
+     function test_Initialize_InvalidHighBetTokenAddress_Reverts() public {
+         // Deploy a new instance to test initialization failure
+        CryptoMarketPoolToken newMarketPool = new CryptoMarketPoolToken();
+        vm.expectRevert("Invalid HighBetToken address");
+        newMarketPool.initialize(
+            PREDICT_AMOUNT,
+            CRYPTO_TARGETED,
+            address(mockFtsoV2),
+            RESOLVE_TIMESTAMP,
+            PARTICIPATION_DEADLINE,
+            MIN_STAKE,
+            REWARD_TOKEN,
+            address(0), // Invalid HighBetToken address
+            address(mockLowBetToken)
+        );
+    }
+
+     function test_Initialize_InvalidLowBetTokenAddress_Reverts() public {
+         // Deploy a new instance to test initialization failure
+        CryptoMarketPoolToken newMarketPool = new CryptoMarketPoolToken();
+        vm.expectRevert("Invalid LowBetToken address");
+        newMarketPool.initialize(
+            PREDICT_AMOUNT,
+            CRYPTO_TARGETED,
+            address(mockFtsoV2),
+            RESOLVE_TIMESTAMP,
+            PARTICIPATION_DEADLINE,
+            MIN_STAKE,
+            REWARD_TOKEN,
+            address(mockHighBetToken),
+            address(0) // Invalid LowBetToken address
+        );
+    }
+
+
+    // --- Test predict Function ---
+
+    function test_Predict_High_Success() public {
+        uint256 stakeAmount = 2e18; // 2 native tokens
+        vm.deal(USER1, stakeAmount); // Give USER1 some native tokens
+
+        vm.prank(USER1);
+        vm.expectEmit(true, true, false, true); // Predicted event
+        emit Predicted(USER1, true, stakeAmount);
+        vm.expectEmit(true, true, false, true); // HighBetTokenAwarded event
+        emit HighBetTokenAwarded(USER1, stakeAmount);
+
+        marketPool.predict{value: stakeAmount}(true, stakeAmount);
+
+        // Check state updates
+        assertEq(marketPool.forGreaterThan(), 1);
+        assertEq(marketPool.againstGreaterThan(), 0);
+        assertEq(marketPool.stakeForGreaterThan(), stakeAmount);
+        assertEq(marketPool.totalStake(), stakeAmount);
+        assertTrue(marketPool.betOn(USER1));
+        assertEq(marketPool.amountStaked(USER1), stakeAmount);
+        assertEq(marketPool.predictorList(0), USER1); // Check predictor list
+
+        // Check mock BetToken state
+        assertEq(mockHighBetToken.balanceOf(USER1), stakeAmount);
+        assertEq(mockHighBetToken.totalSupply(), stakeAmount);
+        assertEq(mockLowBetToken.balanceOf(USER1), 0);
+        assertEq(mockLowBetToken.totalSupply(), 0);
+    }
+
+     function test_Predict_Low_Success() public {
+        uint256 stakeAmount = 3e18; // 3 native tokens
+        vm.deal(USER2, stakeAmount); // Give USER2 some native tokens
+
+        vm.prank(USER2);
+        vm.expectEmit(true, true, false, true); // Predicted event
+        emit Predicted(USER2, false, stakeAmount);
+        vm.expectEmit(true, true, false, true); // LowBetTokenAwarded event
+        emit LowBetTokenAwarded(USER2, stakeAmount);
+
+        marketPool.predict{value: stakeAmount}(false, stakeAmount);
+
+        // Check state updates
+        assertEq(marketPool.forGreaterThan(), 0);
+        assertEq(marketPool.againstGreaterThan(), 1);
+        assertEq(marketPool.stakeForGreaterThan(), 0); // Stake for greaterThan is 0
+        assertEq(marketPool.totalStake(), stakeAmount);
+        assertFalse(marketPool.betOn(USER2));
+        assertEq(marketPool.amountStaked(USER2), stakeAmount);
+        assertEq(marketPool.predictorList(0), USER2); // Check predictor list
+
+        // Check mock BetToken state
+        assertEq(mockHighBetToken.balanceOf(USER2), 0);
+        assertEq(mockHighBetToken.totalSupply(), 0);
+        assertEq(mockLowBetToken.balanceOf(USER2), stakeAmount);
+        assertEq(mockLowBetToken.totalSupply(), stakeAmount);
+    }
+
+    function test_Predict_MultipleUsers() public {
+        uint256 stake1 = 2e18;
+        uint256 stake2 = 3e18;
+        vm.deal(USER1, stake1);
+        vm.deal(USER2, stake2);
+
+        vm.prank(USER1);
+        marketPool.predict{value: stake1}(true, stake1); // USER1 bets High
+
+        vm.prank(USER2);
+        marketPool.predict{value: stake2}(false, stake2); // USER2 bets Low
+
+        // Check state updates after both bets
+        assertEq(marketPool.forGreaterThan(), 1);
+        assertEq(marketPool.againstGreaterThan(), 1);
+        assertEq(marketPool.stakeForGreaterThan(), stake1);
+        assertEq(marketPool.totalStake(), stake1 + stake2);
+        assertEq(marketPool.predictorList(0), USER1);
+        assertEq(marketPool.predictorList(1), USER2);
+
+        // Check BetToken states
+        assertEq(mockHighBetToken.balanceOf(USER1), stake1);
+        assertEq(mockHighBetToken.totalSupply(), stake1);
+        assertEq(mockLowBetToken.balanceOf(USER2), stake2);
+        assertEq(mockLowBetToken.totalSupply(), stake2);
+    }
+
+     function test_Predict_UserUpdatesBet() public {
+        uint256 stake1 = 2e18;
+        uint256 stake2 = 3e18;
+        vm.deal(USER1, stake1 + stake2); // Ensure enough balance
+
+        vm.prank(USER1);
+        marketPool.predict{value: stake1}(true, stake1); // USER1 initially bets High
+
+        // Check state after first bet
+        assertEq(marketPool.forGreaterThan(), 1);
+        assertEq(marketPool.againstGreaterThan(), 0);
+        assertEq(marketPool.stakeForGreaterThan(), stake1);
+        assertEq(marketPool.totalStake(), stake1);
+        assertTrue(marketPool.betOn(USER1));
+        assertEq(marketPool.amountStaked(USER1), stake1);
+        assertEq(mockHighBetToken.balanceOf(USER1), stake1);
+        assertEq(mockHighBetToken.totalSupply(), stake1);
+        assertEq(mockLowBetToken.balanceOf(USER1), 0);
+        assertEq(mockLowBetToken.totalSupply(), 0);
+
+
+        vm.prank(USER1);
+        marketPool.predict{value: stake2}(false, stake2); // USER1 updates bet to Low
+
+        // Check state after update
+        assertEq(marketPool.forGreaterThan(), 0); // Count decreased for High
+        assertEq(marketPool.againstGreaterThan(), 1); // Count increased for Low
+        assertEq(marketPool.stakeForGreaterThan(), 0); // Stake for High is now 0
+        assertEq(marketPool.totalStake(), stake2); // Total stake updated to new amount
+        assertFalse(marketPool.betOn(USER1)); // Bet direction updated
+        assertEq(marketPool.amountStaked(USER1), stake2); // Staked amount updated
+
+        // Check BetToken states - previous tokens should ideally be handled (burned/transferred)
+        // based on IBetToken logic, but the provided contract doesn't explicitly burn/transfer
+        // old BetTokens on update. This might be a design consideration or a missing feature.
+        // We test based on the provided contract's behavior: new tokens are minted.
+        assertEq(mockHighBetToken.balanceOf(USER1), stake1); // Old High tokens remain
+        assertEq(mockHighBetToken.totalSupply(), stake1);
+        assertEq(mockLowBetToken.balanceOf(USER1), stake2); // New Low tokens minted
+        assertEq(mockLowBetToken.totalSupply(), stake2);
+    }
+
+
+    function test_Predict_BelowMinStake_Reverts() public {
+        uint256 stakeAmount = MIN_STAKE - 1;
+        vm.deal(USER1, stakeAmount);
+
+        vm.prank(USER1);
+        vm.expectRevert("Staked amount is below minimum");
+        marketPool.predict{value: stakeAmount}(true, stakeAmount);
+    }
+
+    function test_Predict_ValueAmountMismatch_Reverts() public {
+        uint256 stakeAmount = 2e18;
+        vm.deal(USER1, stakeAmount);
+
+        vm.prank(USER1);
+        vm.expectRevert("Ether sent and amount passed mismatch");
+        marketPool.predict{value: stakeAmount - 1}(true, stakeAmount); // Value sent is less
+    }
+
+    function test_Predict_AfterParticipationDeadline_Reverts() public {
+        uint256 stakeAmount = 2e18;
+        vm.deal(USER1, stakeAmount);
+
+        vm.warp(PARTICIPATION_DEADLINE + 1); // Move time past deadline
+
+        vm.prank(USER1);
+        vm.expectRevert("Participation deadline has passed");
+        marketPool.predict{value: stakeAmount}(true, stakeAmount);
+    }
+
+     function test_Predict_HighBetTokenMaxSupplyReached_Reverts() public {
+        uint256 stakeAmount = 10e18;
+        vm.deal(USER1, stakeAmount);
+
+        // Set max supply on the mock token to be less than the stake amount
+        mockHighBetToken.setMaxSupply(stakeAmount - 1);
+
+        vm.prank(USER1);
+        vm.expectRevert("Cannot place bet: HighBetToken maximum supply reached");
+        marketPool.predict{value: stakeAmount}(true, stakeAmount);
+     }
+
+      function test_Predict_LowBetTokenMaxSupplyReached_Reverts() public {
+        uint256 stakeAmount = 10e18;
+        vm.deal(USER1, stakeAmount);
+
+        // Set max supply on the mock token to be less than the stake amount
+        mockLowBetToken.setMaxSupply(stakeAmount - 1);
+
+        vm.prank(USER1);
+        vm.expectRevert("Cannot place bet: LowBetToken maximum supply reached");
+        marketPool.predict{value: stakeAmount}(false, stakeAmount);
+     }
+
+    // Note: Reentrancy test for predict is implicitly covered by nonReentrant modifier.
+    // To explicitly test it, you would need a malicious contract that calls back.
+
+    // --- Test resolve Function ---
+
+    function test_Resolve_ResolveTimestampNotReached_Reverts() public {
+        // Place bets
+        uint256 highStake = 5e18;
+        vm.deal(USER1, highStake);
+        vm.warp(PARTICIPATION_DEADLINE - 10);
+        vm.prank(USER1);
+        marketPool.predict{value: highStake}(true, highStake);
+
+        // Try to resolve before resolve timestamp
+        vm.warp(RESOLVE_TIMESTAMP - 1);
+        vm.expectRevert("Resolve timestamp not reached");
+        marketPool.resolve();
+    }
+
+
+    // Note: Reentrancy test for resolve is implicitly covered by nonReentrant modifier.
+
+    function test_ClaimRewards_NotResolved_Reverts() public {
+        uint256 stakeAmount = 2e18;
+        vm.deal(USER1, stakeAmount);
+        vm.warp(PARTICIPATION_DEADLINE - 10);
+        vm.prank(USER1);
+        marketPool.predict{value: stakeAmount}(true, stakeAmount);
+
+        // Try to claim before resolution
+        vm.warp(RESOLVE_TIMESTAMP - 1);
+        vm.prank(USER1);
+        vm.expectRevert("Campaign not yet resolved");
+        marketPool.claimRewards();
+    }
+}
