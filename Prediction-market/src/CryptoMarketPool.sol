@@ -50,16 +50,15 @@ contract LowBetToken is BaseBetToken {
 }
 
 contract CryptoMarketPool is IMarketPoolCrypto, ReentrancyGuard {
-    uint256 public predictAmount;
-    string public cryptoTargated;
-    address public oracleAdapter;
-    uint256 public resolveTimestamp;
-    uint256 public participationDeadline;
-    uint256 public minStake;
-
-    bool public initialized = false;
-    bool public resolved = false;
-    bool public greaterThan;
+        uint256 private predictAmount;
+    string  private cryptoTargated;
+    address private oracleAdapter;
+    uint256 private resolveTimestamp;
+    uint256 private participationDeadline;
+    uint256 private minStake;
+    bool    private initialized;
+    bool    private resolved;
+    bool    private greaterThan;
 
     uint256 public forGreaterThan = 0;
     uint256 public againstGreaterThan = 0;

@@ -278,7 +278,6 @@ contract CryptoMarketPoolTokenTest is Test {
         assertEq(marketPool.totalStake(), stakeAmount);
         assertTrue(marketPool.betOn(USER1));
         assertEq(marketPool.amountStaked(USER1), stakeAmount);
-        assertEq(marketPool.predictorList(0), USER1); // Check predictor list
 
         // Check mock BetToken state
         assertEq(mockHighBetToken.balanceOf(USER1), stakeAmount);
@@ -306,7 +305,6 @@ contract CryptoMarketPoolTokenTest is Test {
         assertEq(marketPool.totalStake(), stakeAmount);
         assertFalse(marketPool.betOn(USER2));
         assertEq(marketPool.amountStaked(USER2), stakeAmount);
-        assertEq(marketPool.predictorList(0), USER2); // Check predictor list
 
         // Check mock BetToken state
         assertEq(mockHighBetToken.balanceOf(USER2), 0);
@@ -332,8 +330,7 @@ contract CryptoMarketPoolTokenTest is Test {
         assertEq(marketPool.againstGreaterThan(), 1);
         assertEq(marketPool.stakeForGreaterThan(), stake1);
         assertEq(marketPool.totalStake(), stake1 + stake2);
-        assertEq(marketPool.predictorList(0), USER1);
-        assertEq(marketPool.predictorList(1), USER2);
+
 
         // Check BetToken states
         assertEq(mockHighBetToken.balanceOf(USER1), stake1);

@@ -4,7 +4,9 @@ pragma solidity ^0.8.0; // Keep original pragma
 // --- Interface for a generic BetToken (can be used for both High and Low) ---
 interface IBetToken {
     function mint(address to, uint256 amount) external;
+
     function MAX_SUPPLY() external view returns (uint256);
+
     function totalSupply() external view returns (uint256);
 }
 
@@ -18,7 +20,6 @@ interface IMarketPoolCrypto {
     event HighBetTokenAwarded(address indexed user, uint256 amount);
     event LowBetTokenAwarded(address indexed user, uint256 amount);
 
-
     // Modify initialize interface to accept both token addresses
     function initialize(
         uint256 _predictAmount,
@@ -27,24 +28,23 @@ interface IMarketPoolCrypto {
         uint256 _resolveTimestamp,
         uint256 _participationDeadline,
         uint256 _minStake,
-        address _rewardToken,         // Original reward token
+        address _rewardToken, // Original reward token
         address _highBetTokenAddress, // NEW: High Bet Token address
-        address _lowBetTokenAddress   // NEW: Low Bet Token address
+        address _lowBetTokenAddress // NEW: Low Bet Token address
     ) external;
 }
 
 // Assuming FtsoV2PriceFeed interface is correct
 interface IFtsoV2PriceFeed {
-    function getPriceFeed(string memory _symbol)
-        external
-        view
-        returns (uint256 _price, int8 _decimals, uint64 _timestamp);
+    function getPriceFeed(
+        string memory _symbol
+    ) external view returns (uint256 _price, int8 _decimals, uint64 _timestamp);
 }
 
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 // --- MODIFIED CONTRACT ---
-contract CryptoMarketPool is IMarketPoolCrypto, ReentrancyGuard {
+contract CryptoMarketPoolToken is IMarketPoolCrypto, ReentrancyGuard {
     // --- Existing State Variables ---
     uint256 public predictAmount;
     string public cryptoTargated;
@@ -66,6 +66,8 @@ contract CryptoMarketPool is IMarketPoolCrypto, ReentrancyGuard {
     uint256 public constant STALE_PRICE_THRESHOLD = 300; // 5 minutes
 
     uint256 public constant FEE_PERCENTAGE = 2; // 2%
+
+    address public owner;
     uint256 public globalFee;
 
     IFtsoV2PriceFeed public ftsoV2;
@@ -83,7 +85,7 @@ contract CryptoMarketPool is IMarketPoolCrypto, ReentrancyGuard {
 
     // --- NEW State Variables for TWO Bet Tokens ---
     IBetToken public highBetToken; // Instance for HighBetToken
-    IBetToken public lowBetToken;  // Instance for LowBetToken
+    IBetToken public lowBetToken; // Instance for LowBetToken
 
     // --- Modifiers ---
     modifier onlyInitialized() {
@@ -99,15 +101,24 @@ contract CryptoMarketPool is IMarketPoolCrypto, ReentrancyGuard {
         uint256 _resolveTimestamp,
         uint256 _participationDeadline,
         uint256 _minStake,
-        address _rewardToken,          // Original reward token
-        address _highBetTokenAddress,  // NEW: High Bet Token address
-        address _lowBetTokenAddress    // NEW: Low Bet Token address
+        address _rewardToken, // Original reward token
+        address _highBetTokenAddress, // NEW: High Bet Token address
+        address _lowBetTokenAddress // NEW: Low Bet Token address
     ) external override {
         require(!initialized, "Contract already initialized");
         require(_oracleAdapter != address(0), "Invalid oracle address");
-        require(_participationDeadline < _resolveTimestamp, "Deadline must be before resolution");
-        require(_highBetTokenAddress != address(0), "Invalid HighBetToken address"); // NEW check
-        require(_lowBetTokenAddress != address(0), "Invalid LowBetToken address");   // NEW check
+        require(
+            _participationDeadline < _resolveTimestamp,
+            "Deadline must be before resolution"
+        );
+        require(
+            _highBetTokenAddress != address(0),
+            "Invalid HighBetToken address"
+        ); // NEW check
+        require(
+            _lowBetTokenAddress != address(0),
+            "Invalid LowBetToken address"
+        ); // NEW check
 
         predictAmount = _predictAmount;
         cryptoTargated = _cryptoTargated;
@@ -122,6 +133,9 @@ contract CryptoMarketPool is IMarketPoolCrypto, ReentrancyGuard {
         // --- NEW: Store BOTH Bet Token instances ---
         highBetToken = IBetToken(_highBetTokenAddress);
         lowBetToken = IBetToken(_lowBetTokenAddress);
+
+        // ---- Set owner ----- //
+        owner = msg.sender;
     }
 
     // --- MODIFIED predict Function ---
@@ -183,10 +197,19 @@ contract CryptoMarketPool is IMarketPoolCrypto, ReentrancyGuard {
                     try highBetToken.mint(msg.sender, tokensToAward) {
                         emit HighBetTokenAwarded(msg.sender, tokensToAward);
                     } catch (bytes memory reason) {
-                        revert(string(abi.encodePacked("HighBetToken minting failed: ", reason)));
+                        revert(
+                            string(
+                                abi.encodePacked(
+                                    "HighBetToken minting failed: ",
+                                    reason
+                                )
+                            )
+                        );
                     }
                 } else {
-                    revert("Cannot place bet: HighBetToken maximum supply reached");
+                    revert(
+                        "Cannot place bet: HighBetToken maximum supply reached"
+                    );
                 }
             } else {
                 // --- Award LOW Bet Token ---
@@ -198,20 +221,28 @@ contract CryptoMarketPool is IMarketPoolCrypto, ReentrancyGuard {
                     try lowBetToken.mint(msg.sender, tokensToAward) {
                         emit LowBetTokenAwarded(msg.sender, tokensToAward);
                     } catch (bytes memory reason) {
-                        revert(string(abi.encodePacked("LowBetToken minting failed: ", reason)));
+                        revert(
+                            string(
+                                abi.encodePacked(
+                                    "LowBetToken minting failed: ",
+                                    reason
+                                )
+                            )
+                        );
                     }
                 } else {
-                    revert("Cannot place bet: LowBetToken maximum supply reached");
+                    revert(
+                        "Cannot place bet: LowBetToken maximum supply reached"
+                    );
                 }
             }
         }
         // --- End Award Specific Bet Tokens ---
     }
 
-
     // --- resolve Function (Unchanged) ---
     function resolve() external onlyInitialized {
-         require(
+        require(
             block.timestamp >= resolveTimestamp,
             "Resolve timestamp not reached"
         );
@@ -270,13 +301,18 @@ contract CryptoMarketPool is IMarketPoolCrypto, ReentrancyGuard {
             totalLosingStake = stakeForGreaterThan;
         }
 
-        require(totalWinningStake > 0, "Internal error: No winning stake found");
+        require(
+            totalWinningStake > 0,
+            "Internal error: No winning stake found"
+        );
 
         uint256 netLosingPool = totalLosingStake > globalFee
             ? totalLosingStake - globalFee
             : 0;
 
-        uint256 reward = userStake + (userStake * netLosingPool) / totalWinningStake;
+        uint256 reward = userStake +
+            (userStake * netLosingPool) /
+            totalWinningStake;
 
         rewardClaimed[msg.sender] = true;
 
@@ -287,25 +323,115 @@ contract CryptoMarketPool is IMarketPoolCrypto, ReentrancyGuard {
     }
 
     // --- scalePrice Function (Unchanged, added require checks from thought process) ---
-     function scalePrice(
+    function scalePrice(
         uint256 price,
         int8 priceDecimals,
         uint8 targetDecimals
     ) internal pure returns (uint256) {
-         if (priceDecimals == int8(targetDecimals)) {
+        if (priceDecimals == int8(targetDecimals)) {
             return price;
         }
         if (priceDecimals < int8(targetDecimals)) {
             uint8 diff = uint8(int8(targetDecimals) - priceDecimals);
             require(diff < 78, "Scale multiplication overflow"); // Prevent overflow on 10**diff
             return price * (10 ** diff);
-        } else { // priceDecimals > targetDecimals
+        } else {
+            // priceDecimals > targetDecimals
             uint8 diff = uint8(priceDecimals - int8(targetDecimals));
-             require(diff < 78, "Scale division overflow"); // Prevent overflow on 10**diff
+            require(diff < 78, "Scale division overflow"); // Prevent overflow on 10**diff
             return price / (10 ** diff);
         }
     }
 
-    // Optional fee withdrawal function (Unchanged)
-    // ... add withdrawFees() here if needed ...
+
+
+function withdrawFees() external {
+    require(msg.sender == owner, "Not owner");
+    (bool sent, ) = payable(owner).call{value: globalFee}("");
+    require(sent, "Fee withdrawal failed");
+    globalFee = 0;
+}
+
+    ////////Getters//////////
+
+    function getUserBet(
+        address user
+    ) external view returns (bool prediction, uint256 stake) {
+        Bet memory bet = bets[user];
+        return (bet._greaterThanBet, bet._stake);
+    }
+
+    function getPoolStats() external view returns (
+    uint256 totalForGreaterThan,
+    uint256 totalAgainstGreaterThan,
+    uint256 totalStakeForGreaterThan,
+    uint256 totalStakeAgainstGreaterThan
+) {
+    return (
+        forGreaterThan,
+        againstGreaterThan,
+        stakeForGreaterThan,
+        totalStake - stakeForGreaterThan
+    );
+}
+
+function isResolved() external view returns (bool) {
+    return resolved;
+}
+
+function getOutcome() external view returns (bool greaterThanOutcome) {
+    require(resolved, "Pool not yet resolved");
+    return greaterThan;
+}
+
+function getUserReward(address user) external view returns (uint256) {
+    if (!resolved || rewardClaimed[user] || amountStaked[user] == 0 || betOn[user] != greaterThan) {
+        return 0;
+    }
+    uint256 userStake = amountStaked[user];
+    uint256 totalWinningStake = greaterThan ? stakeForGreaterThan : (totalStake - stakeForGreaterThan);
+    uint256 totalLosingStake = greaterThan ? (totalStake - stakeForGreaterThan) : stakeForGreaterThan;
+    uint256 netLosingPool = totalLosingStake > globalFee ? totalLosingStake - globalFee : 0;
+    return userStake + (userStake * netLosingPool) / totalWinningStake;
+}
+
+// Getters for BetToken addresses
+function getHighBetToken() external view returns (address) {
+    return address(highBetToken);
+}
+
+function getLowBetToken() external view returns (address) {
+    return address(lowBetToken);
+}
+
+// Getters for BetToken supplies
+function getHighBetTokenTotalSupply() external view returns (uint256) {
+    return highBetToken.totalSupply();
+}
+
+function getLowBetTokenTotalSupply() external view returns (uint256) {
+    return lowBetToken.totalSupply();
+}
+
+function getHighBetTokenMaxSupply() external view returns (uint256) {
+    return highBetToken.MAX_SUPPLY();
+}
+
+function getLowBetTokenMaxSupply() external view returns (uint256) {
+    return lowBetToken.MAX_SUPPLY();
+}
+
+// Additional helper getters
+function isOpenForPredictions() external view returns (bool) {
+    return block.timestamp < participationDeadline && !resolved;
+}
+
+function canBeResolved() external view returns (bool) {
+    return block.timestamp >= resolveTimestamp && !resolved;
+}
+
+function getTotalParticipants() external view returns (uint256) {
+    return forGreaterThan + againstGreaterThan;
+}
+
 }
