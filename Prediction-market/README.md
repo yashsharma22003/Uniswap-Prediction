@@ -64,3 +64,14 @@ $ forge --help
 $ anvil --help
 $ cast --help
 ```
+
+
+  FtsoV2PriceFeed deployed at: 0x9035681200aAA554E61B2D13319991c5ABCB92C8
+  MarketFactory deployed at: 0x8dA4b77EC801b547b44D6eDe559c1005F2fE7917
+
+  rpc: https://coston2.enosys.global/ext/C/rpc
+  private: fb9bbe44182c19ddfc3a8ad89dfc86b9e4e18c91d40256af949fc6ffbef78b8a
+
+  Crypto pool 1: 0x20d39847f01386820e30bc0af5e5733147e363dc //BTC
+  Crypto pool 2: 0x3ede4e9ebc046eefe822189573d44e378577ef10 //FLR
+  Crypto pool 3: 0x6ac56d3767009f42d3ab849fdb1b088d1a9143fc //DOGE
